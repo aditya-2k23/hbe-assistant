@@ -1,0 +1,93 @@
+#hbe-hint-panel {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  width: 280px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: #14171f;
+  border: 1px solid #2c3140;
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  z-index: 999999;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #e6e8ee;
+}
+
+#hbe-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: #1e2330;
+  border-radius: 10px 10px 0 0;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: default;
+}
+
+#hbe-collapse {
+  background: none;
+  border: none;
+  color: #aab0c0;
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 4px;
+}
+
+#hbe-body {
+  padding: 12px;
+}
+
+#hbe-status {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+#hbe-status.hbe-status-new {
+  color: #8a90a2;
+}
+
+#hbe-status.hbe-status-cached {
+  color: #63e6be;
+}
+
+#hbe-ask-btn {
+  width: 100%;
+  padding: 8px 10px;
+  background: #3b5bdb;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+
+#hbe-ask-btn:hover {
+  background: #364fc7;
+}
+
+#hbe-ask-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+#hbe-output {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+#hbe-output.hbe-empty {
+  color: #8a90a2;
+  font-style: italic;
+}
+
+#hbe-output.hbe-error {
+  color: #ff8787;
+}
