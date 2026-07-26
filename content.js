@@ -19,6 +19,7 @@
     <div id="hbe-body">
       <div id="hbe-status" class="hbe-status-new">Not explained yet</div>
       <button id="hbe-ask-btn">Answer this question</button>
+      <div id="hbe-output" class="hbe-empty"></div>
     </div>
   `;
   document.body.appendChild(panel);
@@ -26,13 +27,16 @@
   const askBtn = panel.querySelector("#hbe-ask-btn");
   const output = panel.querySelector("#hbe-output");
   const statusEl = panel.querySelector("#hbe-status");
+  const header = panel.querySelector("#hbe-header");
   const collapseBtn = panel.querySelector("#hbe-collapse");
   const body = panel.querySelector("#hbe-body");
 
-  collapseBtn.addEventListener("click", () => {
+  // Whole header toggles collapse now, not just the small icon.
+  header.style.cursor = "pointer";
+  header.addEventListener("click", () => {
     const collapsed = body.style.display === "none";
     body.style.display = collapsed ? "block" : "none";
-    collapseBtn.textContent = collapsed ? "–" : "+";
+    collapseBtn.textContent = collapsed ? "-" : "+";
   });
 
   // ---------- 2. Visibility helper ----------
@@ -108,9 +112,9 @@
     } else {
       statusEl.textContent = "Not explained yet";
       statusEl.className = "hbe-status-new";
-      askBtn.textContent = "Explain this question";
+      askBtn.textContent = "Answer this question";
       output.className = "hbe-empty";
-      output.textContent = "Click the button above whenever you're stuck. You'll get a nudge in the right direction — never the answer.";
+      output.textContent = "";
     }
   }
 
