@@ -14,15 +14,11 @@
   panel.innerHTML = `
     <div id="hbe-header">
       <span>💡 Hint Assistant</span>
-      <button id="hbe-collapse" title="Collapse">–</button>
+      <button id="hbe-collapse" title="Collapse">-</button>
     </div>
     <div id="hbe-body">
       <div id="hbe-status" class="hbe-status-new">Not explained yet</div>
-      <button id="hbe-ask-btn">Explain this question</button>
-      <div id="hbe-output" class="hbe-empty">
-        Click the button above whenever you're stuck.
-        You'll get a nudge in the right direction — never the answer.
-      </div>
+      <button id="hbe-ask-btn">Answer this question</button>
     </div>
   `;
   document.body.appendChild(panel);

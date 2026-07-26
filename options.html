@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <meta charset="utf-8" />
   <title>Hint Assistant — Settings</title>
@@ -10,8 +11,17 @@
       margin: 40px auto;
       color: #1b1f27;
     }
-    h1 { font-size: 18px; }
-    p { color: #555; font-size: 14px; line-height: 1.5; }
+
+    h1 {
+      font-size: 18px;
+    }
+
+    p {
+      color: #555;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
     input[type="text"] {
       width: 100%;
       padding: 8px 10px;
@@ -21,6 +31,7 @@
       border: 1px solid #ccc;
       border-radius: 6px;
     }
+
     button {
       padding: 8px 16px;
       background: #3b5bdb;
@@ -30,15 +41,24 @@
       cursor: pointer;
       font-size: 14px;
     }
-    #status { margin-left: 10px; font-size: 13px; color: green; }
-    a { color: #3b5bdb; }
+
+    #status {
+      margin-left: 10px;
+      font-size: 13px;
+      color: green;
+    }
+
+    a {
+      color: #3b5bdb;
+    }
   </style>
 </head>
+
 <body>
   <h1>Hint Assistant — Settings</h1>
   <p>
     This extension uses your own Gemini API key so requests are billed to
-    you, not shared across every user of the extension. Get a free key at
+    you. Get a free key at
     <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">
       aistudio.google.com/apikey
     </a>.
@@ -50,4 +70,5 @@
   </div>
   <script src="options.js"></script>
 </body>
+
 </html>

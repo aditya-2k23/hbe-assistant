@@ -10,7 +10,10 @@
   border-radius: 10px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
   z-index: 999999;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
   color: #e6e8ee;
 }
 
