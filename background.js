@@ -59,7 +59,7 @@ async function callGemini(apiKey, questionText) {
           role: "user",
           parts: [
             {
-              text: `Here is the scraped question content:\n\n"""${questionText}"""\n\nGive me a hint — not the answer.`,
+              text: `Here is the scraped question content:\n\n"""${questionText}"""\n\nGive me the answer in the format I requested, or tell me if it doesn't look like a question.`,
             },
           ],
         },
