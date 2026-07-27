@@ -1,6 +1,6 @@
 # Hitbullseye Assistant
 
-A Firefox extension that adds a floating panel to Hitbullseye practice test pages. Click it while stuck on a question and it uses the Gemini API to give short answer.
+A Firefox extension that adds a floating panel to Hitbullseye practice test pages. Click it while stuck on a question and it uses the Gemini API to give a short, structured answer.
 
 Each question is only ever sent to the API once. Answers are cached locally, so re-visiting a question you've already asked about costs zero extra API calls.
 
@@ -8,9 +8,10 @@ Each question is only ever sent to the API once. Answers are cached locally, so 
 
 - Floating hint panel injected into the test page (collapsible via its header)
 - Reads only the question currently visible on screen
+- Captures both text and visible images from the question area when available
 - One Gemini API call per unique question, ever — cached locally afterward
 - Status indicator shows whether a question has already been explained
-- Answers are in a JSON structured format:
+- Answers are returned in a strict JSON structured format and rendered as a compact answer card:
 
   ```json
   {
@@ -29,7 +30,7 @@ Each question is only ever sent to the API once. Answers are cached locally, so 
 
 - A Firefox-based browser (Firefox Desktop 142+, or Firefox for Android 142+)
 - A free Gemini API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
-  The model we are using is `gemini-3.5-flash-lite` Gemini's fastest and cheapest model yet.
+  The model we are using is `gemini-3.5-flash-lite`, Gemini's fast and low-cost model.
 
 ## Installation
 
@@ -48,7 +49,7 @@ This is the fastest way to try it, but it's wiped out every time Firefox restart
 
 Firefox requires extensions to be signed by Mozilla to stay installed permanently, even for personal/private use. This project is distributed as an **unlisted, self-signed** build — not published on the public add-ons store.
 
-**You can download the signed `.xpi` file here:** [hbe-assistant.xpi v1.2.0](./web-ext-artifacts/118705a87f3b402cbf41-1.2.0.xpi)
+**You can download the signed `.xpi` file here:** [hbe-assistant.xpi v1.3.0](./web-ext-artifacts/118705a87f3b402cbf41-1.3.0.xpi)
 
 1. Open Firefox and go to `about:addons`
 2. Click the gear icon (⚙️) → **Install Add-on From File…**
@@ -66,6 +67,8 @@ Firefox requires extensions to be signed by Mozilla to stay installed permanentl
 - Click **Answer this question** to get a hint for whatever question is currently on screen
 - The status line above the button shows whether that question has already been explained — if so, clicking it just re-shows the saved hint at no extra cost
 - Click the panel's header to collapse/expand it
+- If the question or options include images, the extension sends them to Gemini together with the text when the browser allows canvas access
+- If an image is cross-origin and cannot be read safely, the extension falls back to text-only for that image instead of failing the whole hint request
 
 ### Ignore below steps if you just want to install the pre-signed `.xpi` — it's only relevant if you want to make changes to the source and sign it yourself
 
@@ -111,4 +114,5 @@ hbe-hint-assistant/
 
 - The domain match in `manifest.json` (`host_permissions` and `content_scripts.matches`) is set to `*.hitbullseye.com` — update this if your test platform uses a different domain
 - Question extraction is heuristic-based (it looks for visible answer inputs and walks up the DOM to find the surrounding question text), since it isn't tied to Hitbullseye's exact internal markup. If a particular test layout doesn't extract cleanly, the extraction logic in `content.js` may need adjusting for that layout
+- The extension also looks for visible images inside the question container and sends them to Gemini as inline image data when possible; blocked cross-origin images are skipped gracefully
 - This extension only works within Firefox-based browsers — it uses the `browser.*` WebExtension APIs, which aren't available in Chromium-based browsers without a separate build

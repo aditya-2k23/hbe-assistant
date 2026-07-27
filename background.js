@@ -39,7 +39,7 @@ browser.runtime.onMessage.addListener((message) => {
   return handleGetHint(message.question);
 });
 
-async function handleGetHint(questionText) {
+async function handleGetHint(questionPayload) {
   const { geminiApiKey } = await browser.storage.local.get("geminiApiKey");
 
   if (!geminiApiKey) {
@@ -50,15 +50,16 @@ async function handleGetHint(questionText) {
   }
 
   try {
-    const hint = await callGemini(geminiApiKey, questionText);
+    const hint = await callGemini(geminiApiKey, questionPayload);
     return { hint };
   } catch (err) {
     return { error: err.message };
   }
 }
 
-async function callGemini(apiKey, questionText) {
+async function callGemini(apiKey, questionPayload) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+  const contentParts = buildContentParts(questionPayload);
 
   const res = await fetch(url, {
     method: "POST",
@@ -71,11 +72,7 @@ async function callGemini(apiKey, questionText) {
       contents: [
         {
           role: "user",
-          parts: [
-            {
-              text: `Here is the scraped question content:\n\n"""${questionText}"""\n\nGive me the answer in the format I requested, or tell me if it doesn't look like a question.`,
-            },
-          ],
+          parts: contentParts,
         },
       ],
       generationConfig: {
@@ -98,6 +95,42 @@ async function callGemini(apiKey, questionText) {
   }
 
   return parseGeminiHint(text);
+}
+
+function buildContentParts(questionPayload) {
+  const payload = normalizeQuestionPayload(questionPayload);
+  const parts = [];
+
+  parts.push({
+    text: `Here is the scraped question content:\n\n"""${payload.text}"""\n\nUse any attached images as part of the question. If image content is unreadable or unavailable, rely on the text and still provide the best possible hint. Return only the JSON object requested in the system instructions.`,
+  });
+
+  for (const image of payload.images) {
+    if (!image?.data || !image?.mimeType) continue;
+    parts.push({
+      inlineData: {
+        mimeType: image.mimeType,
+        data: image.data,
+      },
+    });
+  }
+
+  return parts;
+}
+
+function normalizeQuestionPayload(questionPayload) {
+  if (typeof questionPayload === "string") {
+    return { text: questionPayload, images: [] };
+  }
+
+  if (!questionPayload || typeof questionPayload !== "object") {
+    return { text: "", images: [] };
+  }
+
+  return {
+    text: String(questionPayload.text || ""),
+    images: Array.isArray(questionPayload.images) ? questionPayload.images : [],
+  };
 }
 
 function parseGeminiHint(text) {

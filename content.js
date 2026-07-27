@@ -57,46 +57,128 @@
   // toggle visibility per question, instead of mounting/unmounting them.
   // So we filter to VISIBLE inputs first, then only require the container
   // to hold those visible inputs — not every input anywhere on the page.
-  function extractQuestionText() {
+  function extractQuestionPayload() {
     const visibleInputs = Array.from(
       document.querySelectorAll('input[type="radio"], input[type="checkbox"]')
     ).filter((el) => !panel.contains(el) && isVisible(el));
 
+    let container = document.body;
     if (visibleInputs.length === 0) {
-      return document.body.innerText.slice(0, 4000);
+      container = document.body;
+    } else {
+      // Step 1: minimal container holding all visible inputs. On most of
+      // these platforms this ends up being JUST the options wrapper — the
+      // question stem/directions live in a sibling block one level up.
+      container = visibleInputs[0];
+      for (let depth = 0; depth < 8; depth++) {
+        if (!container.parentElement) break;
+        container = container.parentElement;
+        const containsAllVisible = visibleInputs.every((el) => container.contains(el));
+        if (containsAllVisible) break;
+      }
+
+      // Step 2: keep climbing a bit further to pick up the stem/directions
+      // text sitting alongside the options, but stop before we swallow the
+      // page chrome (timer, question palette, legend, submit button, etc).
+      const STOP_MARKERS = [
+        "Time Left", "Question Palette", "Total Questions", "Max attempts",
+        "Submit test", "Legend", "Not Visited", "Marked for Review",
+      ];
+      let expanded = container;
+      for (let i = 0; i < 5; i++) {
+        if (!expanded.parentElement) break;
+        const candidate = expanded.parentElement;
+        const candidateText = candidate.innerText || "";
+        const hitsChrome = STOP_MARKERS.some((marker) => candidateText.includes(marker));
+        if (hitsChrome) break;
+        expanded = candidate;
+      }
+      container = expanded;
     }
 
-    // Step 1: minimal container holding all visible inputs. On most of
-    // these platforms this ends up being JUST the options wrapper — the
-    // question stem/directions live in a sibling block one level up.
-    let container = visibleInputs[0];
-    for (let depth = 0; depth < 8; depth++) {
-      if (!container.parentElement) break;
-      container = container.parentElement;
-      const containsAllVisible = visibleInputs.every((el) => container.contains(el));
-      if (containsAllVisible) break;
+    const text = (container.innerText || document.body.innerText || "").trim();
+    const images = collectQuestionImages(container);
+
+    return {
+      text: text.length > 20 ? text.slice(0, 4000) : (document.body.innerText || "").slice(0, 4000),
+      images,
+    };
+  }
+
+  function collectQuestionImages(container) {
+    const candidateImages = Array.from(container.querySelectorAll("img"))
+      .filter((img) => !panel.contains(img) && isVisible(img));
+
+    return candidateImages.map((img) => ({
+      src: img.currentSrc || img.src || "",
+      alt: img.alt || "",
+      width: img.naturalWidth || img.width || 0,
+      height: img.naturalHeight || img.height || 0,
+    }));
+  }
+
+  async function prepareQuestionPayloadForModel(questionPayload) {
+    const images = [];
+
+    for (const image of questionPayload.images || []) {
+      const captured = await captureImageAsBase64(image.src);
+      if (captured) {
+        images.push({
+          mimeType: captured.mimeType,
+          data: captured.data,
+          alt: image.alt || "",
+          width: image.width || 0,
+          height: image.height || 0,
+          src: image.src || "",
+        });
+      }
     }
 
-    // Step 2: keep climbing a bit further to pick up the stem/directions
-    // text sitting alongside the options, but stop before we swallow the
-    // page chrome (timer, question palette, legend, submit button, etc).
-    const STOP_MARKERS = [
-      "Time Left", "Question Palette", "Total Questions", "Max attempts",
-      "Submit test", "Legend", "Not Visited", "Marked for Review",
-    ];
-    let expanded = container;
-    for (let i = 0; i < 5; i++) {
-      if (!expanded.parentElement) break;
-      const candidate = expanded.parentElement;
-      const candidateText = candidate.innerText || "";
-      const hitsChrome = STOP_MARKERS.some((marker) => candidateText.includes(marker));
-      if (hitsChrome) break;
-      expanded = candidate;
-    }
-    container = expanded;
+    return {
+      text: questionPayload.text,
+      images,
+    };
+  }
 
-    const text = container.innerText.trim();
-    return text.length > 20 ? text.slice(0, 4000) : document.body.innerText.slice(0, 4000);
+  async function captureImageAsBase64(src) {
+    if (!src) return null;
+
+    try {
+      const image = await loadImage(src);
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth || image.width || 0;
+      canvas.height = image.naturalHeight || image.height || 0;
+
+      if (!canvas.width || !canvas.height) return null;
+
+      const context = canvas.getContext("2d");
+      if (!context) return null;
+
+      context.drawImage(image, 0, 0);
+
+      const dataUrl = canvas.toDataURL("image/png");
+      const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+      if (!match) return null;
+
+      return {
+        mimeType: match[1],
+        data: match[2],
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("Image failed to load"));
+      image.src = src;
+      if (image.complete && image.naturalWidth) {
+        resolve(image);
+      }
+    });
   }
 
   // ---------- 4. Cheap deterministic hash (djb2) for cache keys ----------
@@ -113,12 +195,20 @@
     return `hint_${scope}_${hashString(questionText)}`;
   }
 
+  function cacheKeyForPayload(payload) {
+    const scope = location.hostname + location.pathname;
+    const imageFingerprint = (payload.images || [])
+      .map((image) => [image.src, image.alt, image.width, image.height].join("|"))
+      .join("~~");
+    return `hint_${scope}_${hashString(`${payload.text}__${imageFingerprint}`)}`;
+  }
+
   // ---------- 5. Track which question is on screen & reflect cache state ----------
   let currentKey = null;
 
   async function refreshForCurrentQuestion() {
-    const questionText = extractQuestionText();
-    const key = cacheKeyFor(questionText);
+    const questionPayload = extractQuestionPayload();
+    const key = cacheKeyForPayload(questionPayload);
     if (key === currentKey) return; // same question as last check, nothing to do
 
     currentKey = key;
@@ -148,8 +238,8 @@
 
   // ---------- 6. Ask for a hint (cache-first, API only on a real miss) ----------
   askBtn.addEventListener("click", async () => {
-    const questionText = extractQuestionText();
-    const key = cacheKeyFor(questionText);
+    const questionPayload = extractQuestionPayload();
+    const key = cacheKeyForPayload(questionPayload);
 
     const stored = await browser.storage.local.get(key);
     if (stored[key]) {
@@ -163,9 +253,10 @@
     askBtn.disabled = true;
 
     try {
+      const modelPayload = await prepareQuestionPayloadForModel(questionPayload);
       const response = await browser.runtime.sendMessage({
         type: "GET_HINT",
-        question: questionText,
+        question: modelPayload,
       });
 
       if (response && response.error) {
