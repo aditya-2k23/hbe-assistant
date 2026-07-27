@@ -63,6 +63,9 @@
       return document.body.innerText.slice(0, 4000);
     }
 
+    // Step 1: minimal container holding all visible inputs. On most of
+    // these platforms this ends up being JUST the options wrapper — the
+    // question stem/directions live in a sibling block one level up.
     let container = visibleInputs[0];
     for (let depth = 0; depth < 8; depth++) {
       if (!container.parentElement) break;
@@ -70,6 +73,24 @@
       const containsAllVisible = visibleInputs.every((el) => container.contains(el));
       if (containsAllVisible) break;
     }
+
+    // Step 2: keep climbing a bit further to pick up the stem/directions
+    // text sitting alongside the options, but stop before we swallow the
+    // page chrome (timer, question palette, legend, submit button, etc).
+    const STOP_MARKERS = [
+      "Time Left", "Question Palette", "Total Questions", "Max attempts",
+      "Submit test", "Legend", "Not Visited", "Marked for Review",
+    ];
+    let expanded = container;
+    for (let i = 0; i < 5; i++) {
+      if (!expanded.parentElement) break;
+      const candidate = expanded.parentElement;
+      const candidateText = candidate.innerText || "";
+      const hitsChrome = STOP_MARKERS.some((marker) => candidateText.includes(marker));
+      if (hitsChrome) break;
+      expanded = candidate;
+    }
+    container = expanded;
 
     const text = container.innerText.trim();
     return text.length > 20 ? text.slice(0, 4000) : document.body.innerText.slice(0, 4000);
