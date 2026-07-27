@@ -10,7 +10,19 @@ Each question is only ever sent to the API once. Answers are cached locally, so 
 - Reads only the question currently visible on screen
 - One Gemini API call per unique question, ever — cached locally afterward
 - Status indicator shows whether a question has already been explained
-- Answers are in a structured format: `[Option Number] [Option Text] - [One-line explanation]`
+- Answers are in a JSON structured format:
+
+  ```json
+  {
+    "kind": "answer",
+    "answerOptionNumber": 2,
+    "answerOptionText": "The exact option text",
+    "explanation": "A concise, specific explanation of why this is the best option.",
+    "confidence": "high",
+    "alternateConsideration": "Optional short note only if it helps compare a close distractor."
+  }
+  ```
+
 - Uses your own Gemini API key — nothing is sent to any server other than Gemini's
 
 ## Requirements
@@ -36,7 +48,7 @@ This is the fastest way to try it, but it's wiped out every time Firefox restart
 
 Firefox requires extensions to be signed by Mozilla to stay installed permanently, even for personal/private use. This project is distributed as an **unlisted, self-signed** build — not published on the public add-ons store.
 
-**You can download the signed `.xpi` file here:** [hbe-assistant.xpi v1.1.4](./web-ext-artifacts/118705a87f3b402cbf41-1.1.4.xpi)
+**You can download the signed `.xpi` file here:** [hbe-assistant.xpi v1.2.0](./web-ext-artifacts/118705a87f3b402cbf41-1.2.0.xpi)
 
 1. Open Firefox and go to `about:addons`
 2. Click the gear icon (⚙️) → **Install Add-on From File…**
@@ -66,6 +78,7 @@ Firefox requires extensions to be signed by Mozilla to stay installed permanentl
    ```
 
 2. Create a free account at [addons.mozilla.org](https://addons.mozilla.org), then generate an API key pair at [addons.mozilla.org/developers/addon/api/key](https://addons.mozilla.org/developers/addon/api/key/) (you'll get a JWT issuer + secret — keep these private)
+
 3. From inside the project folder, lint first to catch manifest errors early:
 
    ```bash
@@ -89,7 +102,7 @@ hbe-hint-assistant/
 ├── manifest.json     — extension configuration and permissions
 ├── content.js        — injected into the page: finds the question, draws the panel
 ├── content.css        — panel styling
-├── background.js      — holds the API key, calls Gemini, enforces hints-only behavior
+├── background.js      — holds the API key, calls Gemini, enforces answers-only behavior
 ├── options.html/.js   — settings page for entering your Gemini API key
 └── icons/              — extension icons
 ```

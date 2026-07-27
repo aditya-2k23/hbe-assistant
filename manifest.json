@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Hitbullseye Hint Assistant",
-  "version": "1.1.4",
-  "description": "Get AI-powered hints and concept explanations while practicing on Hitbullseye — never the direct answer.",
+  "name": "Hitbullseye Assistant",
+  "version": "1.2.0",
+  "description": "Get AI-powered answers and concept explanations while practicing on Hitbullseye.",
 
   "icons": {
     "16": "icons/icon-16.png",

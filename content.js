@@ -19,7 +19,10 @@
     <div id="hbe-body">
       <div id="hbe-status" class="hbe-status-new">Not explained yet</div>
       <button id="hbe-ask-btn">Answer this question</button>
-      <div id="hbe-output" class="hbe-empty"></div>
+      <div id="hbe-output" class="hbe-empty">
+        <div class="hbe-output-empty-title">Ask for a structured hint</div>
+        <div class="hbe-output-empty-copy">Gemini will return a tight answer card with the option, a short explanation, and a confidence note.</div>
+      </div>
     </div>
   `;
   document.body.appendChild(panel);
@@ -128,14 +131,12 @@
       statusEl.textContent = "✓ Already explained";
       statusEl.className = "hbe-status-cached";
       askBtn.textContent = "Show saved hint";
-      output.classList.remove("hbe-empty", "hbe-error");
-      output.textContent = cached;
+      renderOutput(cached);
     } else {
       statusEl.textContent = "Not explained yet";
       statusEl.className = "hbe-status-new";
       askBtn.textContent = "Answer this question";
-      output.className = "hbe-empty";
-      output.textContent = "";
+      renderEmptyState();
     }
   }
 
@@ -153,8 +154,7 @@
     const stored = await browser.storage.local.get(key);
     if (stored[key]) {
       // Already cached — just show it again, no API call.
-      output.classList.remove("hbe-empty", "hbe-error");
-      output.textContent = stored[key];
+      renderOutput(stored[key]);
       return;
     }
 
@@ -169,20 +169,137 @@
       });
 
       if (response && response.error) {
-        output.classList.add("hbe-error");
-        output.textContent = response.error;
+        renderError(response.error);
       } else {
-        output.textContent = response.hint;
+        renderOutput(response.hint);
         await browser.storage.local.set({ [key]: response.hint });
         statusEl.textContent = "✓ Already explained";
         statusEl.className = "hbe-status-cached";
         askBtn.textContent = "Show saved hint";
       }
     } catch (err) {
-      output.classList.add("hbe-error");
-      output.textContent = "Something went wrong talking to the extension: " + err.message;
+      renderError("Something went wrong talking to the extension: " + err.message);
     } finally {
       askBtn.disabled = false;
     }
   });
+
+  function renderEmptyState() {
+    output.className = "hbe-empty";
+    replaceOutputChildren(
+      createTextBlock(
+        "hbe-output-empty-title",
+        "Ask for a structured hint"
+      ),
+      createTextBlock(
+        "hbe-output-empty-copy",
+        "Gemini will return a tight answer card with the option, a short explanation, and a confidence note."
+      )
+    );
+  }
+
+  function renderError(message) {
+    output.className = "hbe-error";
+    replaceOutputChildren(
+      createTextBlock("hbe-error-title", "Could not generate a hint"),
+      createTextBlock("hbe-error-copy", message)
+    );
+  }
+
+  function renderOutput(value) {
+    const hint = normalizeHintValue(value);
+
+    if (hint.kind === "not_question") {
+      output.className = "hbe-empty";
+      replaceOutputChildren(
+        createTextBlock("hbe-output-empty-title", "Not a question"),
+        createTextBlock(
+          "hbe-output-empty-copy",
+          hint.message || "The extracted content does not look like a question."
+        )
+      );
+      return;
+    }
+
+    if (hint.kind === "raw") {
+      output.className = "hbe-raw";
+      replaceOutputChildren(createPreBlock("hbe-raw-text", hint.text));
+      return;
+    }
+
+    output.className = "hbe-answer-card";
+    const card = document.createElement("div");
+    card.className = "hbe-answer-card";
+
+    const topLine = document.createElement("div");
+    topLine.className = "hbe-answer-topline";
+
+    const badge = document.createElement("div");
+    badge.className = "hbe-answer-badge";
+    badge.textContent = hint.answerOptionNumber ? `Option ${String(hint.answerOptionNumber)}` : "Best option";
+
+    const confidence = document.createElement("div");
+    confidence.className = `hbe-answer-confidence confidence-${sanitizeTone(hint.confidence || "medium")}`;
+    confidence.textContent = String(hint.confidence || "medium").toUpperCase();
+
+    topLine.append(badge, confidence);
+
+    const option = createTextBlock("hbe-answer-option", hint.answerOptionText || "");
+    const explanation = createTextBlock("hbe-answer-explanation", hint.explanation || "");
+
+    card.append(topLine, option, explanation);
+
+    if (hint.alternateConsideration) {
+      card.append(createDividerBlock("hbe-answer-alt", hint.alternateConsideration));
+    }
+
+    replaceOutputChildren(card);
+  }
+
+  function normalizeHintValue(value) {
+    if (!value || typeof value !== "object") {
+      return { kind: "raw", text: String(value || "") };
+    }
+
+    return value;
+  }
+
+  function escapeHtml(value) {
+    const span = document.createElement("span");
+    span.textContent = String(value);
+    return span.innerHTML;
+  }
+
+  function replaceOutputChildren(...nodes) {
+    output.replaceChildren(...nodes.filter(Boolean));
+  }
+
+  function createTextBlock(className, text) {
+    const element = document.createElement("div");
+    element.className = className;
+    element.textContent = text;
+    return element;
+  }
+
+  function createPreBlock(className, text) {
+    const element = document.createElement("pre");
+    element.className = className;
+    element.textContent = text;
+    return element;
+  }
+
+  function createDividerBlock(className, text) {
+    const element = document.createElement("div");
+    element.className = className;
+    element.textContent = text;
+    return element;
+  }
+
+  function sanitizeTone(value) {
+    const tone = String(value).toLowerCase();
+    if (tone === "high" || tone === "medium" || tone === "low") {
+      return tone;
+    }
+    return "medium";
+  }
 })();

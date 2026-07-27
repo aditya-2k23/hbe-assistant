@@ -11,13 +11,27 @@ questions (verbal ability, logical/analytical reasoning, or coding) on a
 practice platform called Hitbullseye.
 
 You will be given raw text scraped from the current question on screen.
-It may include the question stem, answer options, and some stray UI text
+It may include the question stem, answer options, and stray UI text
 (timers, button labels, question numbers) — ignore the UI noise.
 
-STRICT RULES:
-1. For each test question I provide, reply using this exact format: [Option Number] [Option Text] - [One-line explanation]
-2. Do not include any extra introduction or conclusion.
-3. If the extracted text doesn't actually look like a question (e.g. it's navigation or timer text), say so in one short sentence.
+STRICT OUTPUT RULES:
+1. Return exactly one valid JSON object and nothing else.
+2. Do not wrap the JSON in markdown fences or add commentary.
+3. Use this shape when the text is a real question:
+   {
+     "kind": "answer",
+     "answerOptionNumber": 2,
+     "answerOptionText": "The exact option text",
+     "explanation": "A concise, specific explanation of why this is the best option.",
+     "confidence": "high",
+     "alternateConsideration": "Optional short note only if it helps compare a close distractor."
+   }
+4. Use this shape when the text is not a question:
+   {
+     "kind": "not_question",
+     "message": "One short sentence explaining why the content does not look like a question."
+   }
+5. Keep explanations crisp and practical. Do not mention that you are an AI.
 `.trim();
 
 browser.runtime.onMessage.addListener((message) => {
@@ -31,7 +45,7 @@ async function handleGetHint(questionText) {
   if (!geminiApiKey) {
     return {
       error:
-        "No Gemini API key set yet. Right-click the extension icon → Manage Extension → Preferences to add your key.",
+        "No Gemini API key set yet. Go to extension's settings (Gear icon) → Manage Extension → Three Dots -> Options to add your key.",
     };
   }
 
@@ -65,8 +79,9 @@ async function callGemini(apiKey, questionText) {
         },
       ],
       generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 130,
+        temperature: 0.2,
+        maxOutputTokens: 220,
+        responseMimeType: "application/json",
       },
     }),
   });
@@ -78,5 +93,59 @@ async function callGemini(apiKey, questionText) {
 
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  return text || "The model didn't return a hint — try again.";
+  if (!text) {
+    return { kind: "raw", text: "The model didn't return an answer — try again." };
+  }
+
+  return parseGeminiHint(text);
+}
+
+function parseGeminiHint(text) {
+  const parsed = safeParseJson(stripCodeFences(text));
+
+  if (parsed && typeof parsed === "object") {
+    if (parsed.kind === "not_question") {
+      return {
+        kind: "not_question",
+        message: String(parsed.message || "The extracted text does not look like a question."),
+      };
+    }
+
+    const answerOptionNumber = parsed.answerOptionNumber ?? parsed.optionNumber ?? null;
+    const answerOptionText = parsed.answerOptionText ?? parsed.optionText ?? "";
+    const explanation = parsed.explanation ?? parsed.reason ?? "";
+
+    return {
+      kind: "answer",
+      answerOptionNumber: answerOptionNumber === null ? null : Number(answerOptionNumber),
+      answerOptionText: String(answerOptionText),
+      explanation: String(explanation),
+      confidence: parsed.confidence ? String(parsed.confidence) : "medium",
+      alternateConsideration: parsed.alternateConsideration ? String(parsed.alternateConsideration) : "",
+      rawText: text,
+    };
+  }
+
+  return { kind: "raw", text };
+}
+
+function stripCodeFences(text) {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("```")) return trimmed;
+
+  const firstNewline = trimmed.indexOf("\n");
+  const lastFence = trimmed.lastIndexOf("```");
+  if (firstNewline === -1 || lastFence === -1 || lastFence <= firstNewline) {
+    return trimmed;
+  }
+
+  return trimmed.slice(firstNewline + 1, lastFence).trim();
+}
+
+function safeParseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
