@@ -17,6 +17,16 @@
       <button id="hbe-collapse" title="Collapse">-</button>
     </div>
     <div id="hbe-body">
+      <div id="hbe-toolbar">
+        <div id="hbe-model-group">
+          <label for="hbe-model" id="hbe-model-label">Model</label>
+          <select id="hbe-model">
+            <option value="gemini-3.5-flash-lite">Fast</option>
+            <option value="gemini-3.6-flash">Accurate</option>
+          </select>
+        </div>
+        <button id="hbe-retry-icon" title="Retry this question" aria-label="Retry this question">↻</button>
+      </div>
       <div id="hbe-status" class="hbe-status-new">Not explained yet</div>
       <button id="hbe-ask-btn">Answer this question</button>
       <div id="hbe-output" class="hbe-empty">
@@ -33,13 +43,39 @@
   const header = panel.querySelector("#hbe-header");
   const collapseBtn = panel.querySelector("#hbe-collapse");
   const body = panel.querySelector("#hbe-body");
+  const modelSelect = panel.querySelector("#hbe-model");
+  const retryIcon = panel.querySelector("#hbe-retry-icon");
+  let isCollapsed = false;
 
   // Whole header toggles collapse now, not just the small icon.
   header.style.cursor = "pointer";
   header.addEventListener("click", () => {
-    const collapsed = body.style.display === "none";
-    body.style.display = collapsed ? "block" : "none";
-    collapseBtn.textContent = collapsed ? "-" : "+";
+    isCollapsed = body.style.display !== "none";
+    body.style.display = isCollapsed ? "none" : "block";
+    collapseBtn.textContent = isCollapsed ? "+" : "-";
+
+    if (!isCollapsed) {
+      refreshForCurrentQuestion();
+    }
+  });
+
+  browser.storage.local.get("geminiModel").then(({ geminiModel }) => {
+    modelSelect.value = geminiModel || "gemini-3.5-flash-lite";
+  });
+
+  modelSelect.addEventListener("change", async () => {
+    const selectedModel = modelSelect.value || "gemini-3.5-flash-lite";
+    await browser.storage.local.set({ geminiModel: selectedModel });
+
+    if (!isCollapsed) {
+      lastAutoRequestedKey = null;
+      refreshForCurrentQuestion();
+    }
+  });
+
+  retryIcon.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    await requestHint({ isRetry: true });
   });
 
   // ---------- 2. Visibility helper ----------
@@ -205,8 +241,12 @@
 
   // ---------- 5. Track which question is on screen & reflect cache state ----------
   let currentKey = null;
+  let autoRequestInFlight = false;
+  let lastAutoRequestedKey = null;
 
   async function refreshForCurrentQuestion() {
+    if (isCollapsed) return;
+
     const questionPayload = extractQuestionPayload();
     const key = cacheKeyForPayload(questionPayload);
     if (key === currentKey) return; // same question as last check, nothing to do
@@ -222,11 +262,13 @@
       statusEl.className = "hbe-status-cached";
       askBtn.textContent = "Show saved hint";
       renderOutput(cached);
+      lastAutoRequestedKey = key;
     } else {
       statusEl.textContent = "Not explained yet";
       statusEl.className = "hbe-status-new";
       askBtn.textContent = "Answer this question";
       renderEmptyState();
+      void autoRequestHintForCurrentQuestion(questionPayload, key);
     }
   }
 
@@ -238,42 +280,110 @@
 
   // ---------- 6. Ask for a hint (cache-first, API only on a real miss) ----------
   askBtn.addEventListener("click", async () => {
-    const questionPayload = extractQuestionPayload();
-    const key = cacheKeyForPayload(questionPayload);
+    await requestHint({ isRetry: false });
+  });
 
-    const stored = await browser.storage.local.get(key);
-    if (stored[key]) {
-      // Already cached — just show it again, no API call.
-      renderOutput(stored[key]);
-      return;
-    }
+  async function autoRequestHintForCurrentQuestion(questionPayload, key) {
+    if (isCollapsed) return;
 
-    output.classList.remove("hbe-empty", "hbe-error");
-    output.textContent = "Thinking of a hint…";
-    askBtn.disabled = true;
+    if (autoRequestInFlight || lastAutoRequestedKey === key) return;
+
+    autoRequestInFlight = true;
+    lastAutoRequestedKey = key;
+    setLoadingState("Thinking of a hint…");
 
     try {
       const modelPayload = await prepareQuestionPayloadForModel(questionPayload);
       const response = await browser.runtime.sendMessage({
         type: "GET_HINT",
         question: modelPayload,
+        retry: false,
+      });
+
+      if (response && response.error) {
+        renderError(response.error);
+        lastAutoRequestedKey = null;
+        statusEl.textContent = "Not explained yet";
+        statusEl.className = "hbe-status-new";
+        askBtn.textContent = "Answer this question";
+        return;
+      }
+
+      renderOutput(response.hint, { questionPayload, key });
+      if (response.hint && response.hint.kind === "answer") {
+        await browser.storage.local.set({ [key]: response.hint });
+        statusEl.textContent = "✓ Already explained";
+        statusEl.className = "hbe-status-cached";
+        askBtn.textContent = "Show saved hint";
+      } else {
+        statusEl.textContent = "Not explained yet";
+        statusEl.className = "hbe-status-new";
+        askBtn.textContent = "Answer this question";
+      }
+    } catch (err) {
+      renderError("Something went wrong talking to the extension: " + err.message);
+      lastAutoRequestedKey = null;
+      statusEl.textContent = "Not explained yet";
+      statusEl.className = "hbe-status-new";
+      askBtn.textContent = "Answer this question";
+    } finally {
+      autoRequestInFlight = false;
+      askBtn.disabled = false;
+    }
+  }
+
+  async function requestHint({ isRetry }) {
+    if (isCollapsed) return;
+
+    const questionPayload = extractQuestionPayload();
+    const key = cacheKeyForPayload(questionPayload);
+
+    if (!isRetry) {
+      const stored = await browser.storage.local.get(key);
+      if (stored[key]) {
+        // Already cached — just show it again, no API call.
+        renderOutput(stored[key], { questionPayload, key });
+        return;
+      }
+    }
+
+    setLoadingState(isRetry ? "Retrying with a stricter read…" : "Thinking of a hint…");
+
+    try {
+      const modelPayload = await prepareQuestionPayloadForModel(questionPayload);
+      const response = await browser.runtime.sendMessage({
+        type: "GET_HINT",
+        question: modelPayload,
+        retry: isRetry,
       });
 
       if (response && response.error) {
         renderError(response.error);
       } else {
-        renderOutput(response.hint);
-        await browser.storage.local.set({ [key]: response.hint });
-        statusEl.textContent = "✓ Already explained";
-        statusEl.className = "hbe-status-cached";
-        askBtn.textContent = "Show saved hint";
+        renderOutput(response.hint, { questionPayload, key });
+        if (response.hint && response.hint.kind === "answer") {
+          await browser.storage.local.set({ [key]: response.hint });
+          statusEl.textContent = "✓ Already explained";
+          statusEl.className = "hbe-status-cached";
+          askBtn.textContent = "Show saved hint";
+        } else {
+          statusEl.textContent = "Not explained yet";
+          statusEl.className = "hbe-status-new";
+          askBtn.textContent = "Answer this question";
+        }
       }
     } catch (err) {
       renderError("Something went wrong talking to the extension: " + err.message);
     } finally {
       askBtn.disabled = false;
     }
-  });
+  }
+
+  function setLoadingState(message) {
+    output.className = "hbe-empty";
+    replaceOutputChildren(createTextBlock("hbe-output-empty-copy", message));
+    askBtn.disabled = true;
+  }
 
   function renderEmptyState() {
     output.className = "hbe-empty";
@@ -297,7 +407,7 @@
     );
   }
 
-  function renderOutput(value) {
+  function renderOutput(value, context = {}) {
     const hint = normalizeHintValue(value);
 
     if (hint.kind === "not_question") {

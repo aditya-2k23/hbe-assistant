@@ -3,7 +3,11 @@
 // and the only place the system prompt is defined — keeping the
 // "never give the answer" rule in one spot.
 
-const MODEL = "gemini-3.5-flash-lite"; // fast + cheap; swap to gemini-3.6-flash for better reasoning
+const DEFAULT_MODEL = "gemini-3.5-flash-lite";
+const MODEL_LABELS = {
+  "gemini-3.5-flash-lite": "Fast",
+  "gemini-3.6-flash": "Accurate",
+};
 
 const SYSTEM_INSTRUCTION = `
 You are a study tutor helping a student practice for placement-exam style
@@ -36,11 +40,14 @@ STRICT OUTPUT RULES:
 
 browser.runtime.onMessage.addListener((message) => {
   if (message.type !== "GET_HINT") return;
-  return handleGetHint(message.question);
+  return handleGetHint(message.question, message.retry === true);
 });
 
-async function handleGetHint(questionPayload) {
-  const { geminiApiKey } = await browser.storage.local.get("geminiApiKey");
+async function handleGetHint(questionPayload, isRetry = false) {
+  const { geminiApiKey, geminiModel } = await browser.storage.local.get([
+    "geminiApiKey",
+    "geminiModel",
+  ]);
 
   if (!geminiApiKey) {
     return {
@@ -50,16 +57,47 @@ async function handleGetHint(questionPayload) {
   }
 
   try {
-    const hint = await callGemini(geminiApiKey, questionPayload);
+    const hint = await callGemini(geminiApiKey, questionPayload, isRetry, geminiModel);
     return { hint };
   } catch (err) {
     return { error: err.message };
   }
 }
 
-async function callGemini(apiKey, questionPayload) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
-  const contentParts = buildContentParts(questionPayload);
+async function callGemini(apiKey, questionPayload, isRetry = false, selectedModel) {
+  const models = buildModelChain(selectedModel);
+  let lastError = null;
+
+  for (const model of models) {
+    try {
+      const hint = await callGeminiModel(apiKey, questionPayload, isRetry, model);
+      if (hint) {
+        return hint;
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error("Gemini did not return a usable answer.");
+}
+
+function buildModelChain(selectedModel) {
+  const normalized = normalizeModelName(selectedModel);
+  if (normalized === "gemini-3.6-flash") {
+    return ["gemini-3.6-flash", DEFAULT_MODEL];
+  }
+
+  return [DEFAULT_MODEL, "gemini-3.6-flash"];
+}
+
+function normalizeModelName(modelName) {
+  return Object.prototype.hasOwnProperty.call(MODEL_LABELS, modelName) ? modelName : DEFAULT_MODEL;
+}
+
+async function callGeminiModel(apiKey, questionPayload, isRetry, model) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  const contentParts = buildContentParts(questionPayload, isRetry);
 
   const res = await fetch(url, {
     method: "POST",
@@ -91,18 +129,18 @@ async function callGemini(apiKey, questionPayload) {
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) {
-    return { kind: "raw", text: "The model didn't return an answer — try again." };
+    throw new Error(`Gemini model ${model} did not return an answer.`);
   }
 
   return parseGeminiHint(text);
 }
 
-function buildContentParts(questionPayload) {
+function buildContentParts(questionPayload, isRetry = false) {
   const payload = normalizeQuestionPayload(questionPayload);
   const parts = [];
 
   parts.push({
-    text: `Here is the scraped question content:\n\n"""${payload.text}"""\n\nUse any attached images as part of the question. If image content is unreadable or unavailable, rely on the text and still provide the best possible hint. Return only the JSON object requested in the system instructions.`,
+    text: `${isRetry ? "This is a retry because the previous pass may have incorrectly classified a real question as not a question. Re-evaluate carefully. If there is any plausible question stem, answer options, diagram, chart, code screenshot, or image-based prompt, treat it as a real question and provide the best hint." : "Here is the scraped question content:"}\n\n"""${payload.text}"""\n\nUse any attached images as part of the question. If image content is unreadable or unavailable, rely on the text and still provide the best possible hint. Return only the JSON object requested in the system instructions.`,
   });
 
   for (const image of payload.images) {
@@ -134,13 +172,29 @@ function normalizeQuestionPayload(questionPayload) {
 }
 
 function parseGeminiHint(text) {
-  const parsed = safeParseJson(stripCodeFences(text));
+  const parsed = parseModelJson(text);
 
   if (parsed && typeof parsed === "object") {
     if (parsed.kind === "not_question") {
       return {
         kind: "not_question",
         message: String(parsed.message || "The extracted text does not look like a question."),
+      };
+    }
+
+    if (parsed.kind === "answer" || parsed.kind === "hint") {
+      const answerOptionNumber = parsed.answerOptionNumber ?? parsed.optionNumber ?? null;
+      const answerOptionText = parsed.answerOptionText ?? parsed.optionText ?? "";
+      const explanation = parsed.explanation ?? parsed.reason ?? parsed.text ?? "";
+
+      return {
+        kind: "answer",
+        answerOptionNumber: answerOptionNumber === null ? null : Number(answerOptionNumber),
+        answerOptionText: String(answerOptionText),
+        explanation: String(explanation),
+        confidence: parsed.confidence ? String(parsed.confidence) : "medium",
+        alternateConsideration: parsed.alternateConsideration ? String(parsed.alternateConsideration) : "",
+        rawText: text,
       };
     }
 
@@ -160,6 +214,36 @@ function parseGeminiHint(text) {
   }
 
   return { kind: "raw", text };
+}
+
+function parseModelJson(text) {
+  const candidates = [text, stripCodeFences(text), extractJsonBlock(text)];
+
+  for (const candidate of candidates) {
+    const parsed = safeParseJson(candidate);
+    if (!parsed) continue;
+
+    if (typeof parsed === "string") {
+      const innerParsed = safeParseJson(stripCodeFences(parsed));
+      if (innerParsed) return innerParsed;
+      continue;
+    }
+
+    return parsed;
+  }
+
+  return null;
+}
+
+function extractJsonBlock(text) {
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+
+  if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+    return text;
+  }
+
+  return text.slice(firstBrace, lastBrace + 1).trim();
 }
 
 function stripCodeFences(text) {

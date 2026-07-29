@@ -7,9 +7,11 @@ Each question is only ever sent to the API once. Answers are cached locally, so 
 ## Features
 
 - Floating hint panel injected into the test page (collapsible via its header)
+- Floating hint panel includes a built-in model switcher for fast vs accurate answers
 - Reads only the question currently visible on screen
 - Captures both text and visible images from the question area when available
 - One Gemini API call per unique question, ever — cached locally afterward
+- Auto-fetches a hint when the visible question changes, so you do not need to click for every new question
 - Status indicator shows whether a question has already been explained
 - Answers are returned in a strict JSON structured format and rendered as a compact answer card:
 
@@ -25,6 +27,7 @@ Each question is only ever sent to the API once. Answers are cached locally, so 
   ```
 
 - Uses your own Gemini API key — nothing is sent to any server other than Gemini's
+- Lets you choose the answer model in Settings: fast `gemini-3.5-flash-lite` or more accurate `gemini-3.6-flash`
 
 ## Requirements
 
@@ -59,7 +62,7 @@ Firefox requires extensions to be signed by Mozilla to stay installed permanentl
 ## Setup after installing
 
 1. Go to `about:addons`, find **Hitbullseye Assistant**, click **Three dots** -> **Options**
-2. Paste in your Gemini API key and click **Save**
+2. Paste in your Gemini API key, choose the answer model, and click **Save**
 3. Open a Hitbullseye test page — the hint panel should appear in the bottom-right corner
 
 ## Usage
@@ -69,6 +72,7 @@ Firefox requires extensions to be signed by Mozilla to stay installed permanentl
 - Click the panel's header to collapse/expand it
 - If the question or options include images, the extension sends them to Gemini together with the text when the browser allows canvas access
 - If an image is cross-origin and cannot be read safely, the extension falls back to text-only for that image instead of failing the whole hint request
+- If the selected model fails or returns no usable answer, the extension will try the other supported model before showing an error
 
 ### Ignore below steps if you just want to install the pre-signed `.xpi` — it's only relevant if you want to make changes to the source and sign it yourself
 
